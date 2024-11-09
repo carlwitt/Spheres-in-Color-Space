@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equidistant Colors</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        #controls {
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+
+        #map {
+            padding: 20px;
+        }
+
+        #controls input[type="range"] {
+            width: 100px;
+        }
+
+        #controls .panel {
+            display: flex;
+            border-bottom: 1px solid #ccc;
+        }
+
+        #controls .panel h4 {
+            margin: 0;
+            width: 200px;
+            text-align: center;
+        }
+
+        #controls .panel label,
+        span {
+            margin: 20px 5px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Equidistant Colors</h1>
+
+    <div id="controls">
+        <div class="panel">
+            <h4>Sphere Controls</h4>
+            <label for="colorPicker">Reference Color (Center of sphere)</label>
+            <input type="color" id="colorPicker" value="#ffff44" onchange="recompute()">
+
+            <label for="radiusSlider">Radius</label>
+            <input type="range" id="radiusSlider" min="1" max="1000" value="420" oninput="recompute()">
+            <span id="radiusValue"></span>
+
+            <label for="colorSpaceSelect">Color Space</label>
+            <select id="colorSpaceSelect" onchange="recompute()">
+                <option value="rgb">rgb</option>
+                <option value="hsl">hsl</option>
+            </select>
+        </div>
+
+        <div class="panel">
+            <h4>Map Controls</h4>
+            <label for="projectionSelect">Projection</label>
+            <select id="projectionSelect" onchange="recompute()">
+                <option value="geoAzimuthalEqualArea">Azimuthal Equal Area</option>
+                <option value="geoOrthographic">Orthographic</option>
+                <option value="geoMercator">Mercator</option>
+                <option value="geoEquirectangular">Equirectangular</option>
+                <option value="geoConicConformal">Conic Conformal</option>
+            </select>
+
+            <label for="scaleSlider">Scale</label>
+            <input type="range" id="scaleSlider" min="10" max="1000" value="100" oninput="recompute()">
+            <span id="scaleValue"></span>
+            <br />
+
+            <label for="latitudeRotationSlider">Latitude rotation</label>
+            <input type="range" id="latitudeRotationSlider" min="0" max="360" value="0" oninput="recompute()">
+            <span id="latitudeRotationValue">0</span>
+
+            <label for="longitudeRotationSlider">Longitude rotation</label>
+            <input type="range" id="longitudeRotationSlider" min="0" max="360" value="0" oninput="recompute()">
+            <span id="longitudeRotationValue">0</span>
+        </div>
+
+
+    </div>
+
+    <div id="map">
+    </div>
+
+    <p>
+        The map shows the colors that are equidistant to the reference color (background
+        of the page) in the selected color space.
+        Since these colors are located on a sphere, a projection is used to display them as a map.
+    </p>
+
+    <script>
+        const width = 600;
+        const height = 300;
+
+        // for normalization - sphere needs "equally long" axes
+        const coloraSpaces = [{
+            name: "rgb",
+            func: d3.rgb,
+            components: ["r", "g", "b"],
+            axisMax: [255, 255, 255]
+        }, {
+            name: "hsl",
+            func: d3.hsl,
+            components: ["h", "s", "l"],
+            axisMax: [360, 100, 100]
+        }];
+
+        presets = [{
+            sphere: {
+                colorSpace: "rgb",
+                referenceColor: "rgb(220, 220, 220)",
+                radius: 128,
+            },
+            map: {
+                projection: {
+                    name: "mercator",
+                    scale: 175,
+                    longitudeRotation: 0,
+                    latitudeRotation: 0
+                },
+                scale: 100
+            }
+        }];
+
+        recompute();
+
+        /**
+         * Maps a point on a sphere to a color in the selected color space.
+         * @param {Object} center - The center of the sphere in RGB
+         * @param {number} radius - The radius of the sphere in the selected color space coordinates.
+         * @param {number} lon - The longitude of the point on the sphere.
+         * @param {number} lat - The latitude of the point on the sphere.
+         * @param {number} longitudeRotation - The rotation around the longitude axis.
+         * @param {number} latitudeRotation - The rotation around the latitude axis.
+         * @param {string} colorSpace - The name of the d3 color space function to use.
+         * @returns {string} The color in the selected color space.
+         */
+        function mapToColor(center, radius, lon, lat, longitudeRotation, latitudeRotation, colorSpace) {
+
+            lon = (lon + longitudeRotation) % 180;
+            lat = (lat + latitudeRotation) % 90;
+
+            // compute location on sphere in a normalized coordinate system
+            let x = Math.cos(lon / 180 * Math.PI) * Math.cos(lat / 180 * Math.PI);
+            let y = Math.sin(lon / 180 * Math.PI) * Math.cos(lat / 180 * Math.PI);
+            let z = Math.sin(lat / 180 * Math.PI);
+
+            const colorSpaceFunc = d3[colorSpace];
+            //
+            center = colorSpaceFunc(center);
+            // rename components of center to x, y, z
+            names = colorSpace == "rgb" ? ["r", "g", "b"] : ["h", "s", "l"];
+
+            if (lon == 0 && lat == 0) {
+                console.log(center, names);
+            }
+            // scale and translate
+            x = x * radius + center[names[0]];
+            y = y * radius + center[names[1]];
+            z = z * radius + center[names[2]];
+
+            if (lon == 0 && lat == 0) {
+                console.log(`radius: ${radius}`);
+                console.log(center);
+                console.log(`x: ${x}, y: ${y}, z: ${z}`);
+            }
+
+            // convert from selected color space to RGB
+            // console.log(center, radius, lon, lat, longitudeRotation, latitudeRotation, colorSpace);
+            // console.log(d3.color(colorSpaceFunc(x, y, z)));
+            const color = d3.color(colorSpaceFunc(x, y, z));
+            return `rgb(${color.r},${color.g},${color.b})`;
+
+
+            // // const r = Math.floor((lon + latitudeRotation) / 360 * 255);
+            // // const g = Math.floor((lat + 90) / 180 * 255);
+            // // const b = 100; //(r * g) / 36 % 255; // Fixed blue value for simplicity
+        }
+
+        function getParameters() {
+            const projectionName = d3.select("#projectionSelect").property("value");
+            return {
+                sphere: {
+                    radius: d3.select("#radiusSlider").property("value"),
+                    longitudeRotation: d3.select("#longitudeRotationSlider").property("value"),
+                    latitudeRotation: d3.select("#latitudeRotationSlider").property("value"),
+                },
+                map: {
+                    projection: {
+                        name: projectionName,
+                        func: d3[projectionName]
+                    },
+                    scale: d3.select("#scaleSlider").property("value")
+                }
+            };
+        }
+
+        function updateParameterLabels(parameters) {
+            d3.select("#radiusValue").text(parameters.sphere.radius);
+            d3.select("#latitudeRotationValue").text(parameters.sphere.latitudeRotation);
+            d3.select("#longitudeRotationValue").text(parameters.sphere.longitudeRotation);
+            d3.select("#scaleValue").text(parameters.map.scale);
+        }
+
+        function recompute() {
+            const parameters = getParameters();
+            updateParameterLabels(parameters);
+
+            let projection = parameters.map.projection.func()
+                .scale(parameters.map.scale)
+                .translate([width / 2, height / 2]); // center the map
+
+            // Remove the previous map
+            d3.select("#map").selectAll("*").remove();
+
+
+            function render() {
+                const imageData = new ImageData(width, height);
+
+                for (let x = 0; x < width; x++) {
+                    for (let y = 0; y < height; y++) {
+                        const [lon, lat] = projection.invert([x, y]);
+                        const color = mapToColor(
+                            d3.color(d3.select("#colorPicker").property("value")),
+                            parameters.sphere.radius,
+                            lon,
+                            lat,
+                            parameters.sphere.longitudeRotation,
+                            parameters.sphere.latitudeRotation,
+                            d3.select("#colorSpaceSelect").property("value")
+                        );
+                        const [r, g, b] = color.match(/\d+/g).map(Number);
+                        const index = (y * width + x) * 4;
+                        imageData.data[index] = r;
+                        imageData.data[index + 1] = g;
+                        imageData.data[index + 2] = b;
+                        imageData.data[index + 3] = 255; // Alpha channel
+                    }
+                }
+                return imageData;
+            }
+
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext("2d");
+            context.putImageData(render(), 0, 0);
+            document.getElementById("map").appendChild(canvas);
+
+            {
+
+                // Add tooltip
+                const tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("position", "absolute")
+                    .style("background-color", "white")
+                    .style("border", "1px solid #ccc")
+                    .style("padding", "5px")
+                    .style("display", "none");
+
+                canvas.addEventListener("mousemove", function (event) {
+                    const [x, y] = d3.pointer(event);
+                    const [lon, lat] = projection.invert([x, y]);
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px")
+                        .style("display", "inline-block")
+                        .html(`Longitude: ${lon.toFixed(2)}, Latitude: ${lat.toFixed(2)}<br>Color: ${mapToColor(
+                            d3.color(d3.select("#colorPicker").property("value")),
+                            parameters.sphere.radius,
+                            lon,
+                            lat,
+                            parameters.sphere.longitudeRotation,
+                            parameters.sphere.latitudeRotation,
+                            d3.select("#colorSpaceSelect").property("value")
+                        )}`);
+                });
+
+                canvas.addEventListener("mouseout", function () {
+                    tooltip.style("display", "none");
+                });
+            }
+        }
+
+    </script>
+</body>
+
+</html>
