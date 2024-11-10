@@ -20,13 +20,16 @@
             padding: 20px;
         }
 
-        #controls input[type="range"] {
+        #controls input {
             width: 100px;
+            margin-right: 10px;
         }
 
         #controls .panel {
             display: flex;
+            align-items: center; /* Vertically center the items */
             border-bottom: 1px solid #ccc;
+            padding: 10px 0;
         }
 
         #controls .panel h4 {
@@ -35,9 +38,8 @@
             text-align: center;
         }
 
-        #controls .panel label,
-        span {
-            margin: 20px 5px 0;
+        #controls .panel label{
+            margin: 0px 5px 0 0px;
         }
     </style>
 </head>
@@ -49,53 +51,69 @@
         <div class="panel">
             <h4>Sphere Controls</h4>
             <label for="colorPicker">Reference Color (Center of sphere)</label>
-            <input type="color" id="colorPicker" value="#ffff44" onchange="recompute()">
+            <input type="color" id="colorPicker" value="#6B82DB" onchange="recompute()">
 
             <label for="radiusSlider">Radius</label>
-            <input type="range" id="radiusSlider" min="1" max="1000" value="420" oninput="recompute()">
+            <input type="range" id="radiusSlider" min="0.1" max="255" value="122" oninput="recompute()" step="0.1">
             <span id="radiusValue"></span>
 
-            <label for="colorSpaceSelect">Color Space</label>
-            <select id="colorSpaceSelect" onchange="recompute()">
-                <option value="rgb">rgb</option>
-                <option value="hsl">hsl</option>
-            </select>
+            <div style="display:none">
+                <label for="colorSpaceSelect">Color Space</label>
+                <select id="colorSpaceSelect" onchange="recompute()">
+                    <option value="rgb">rgb</option>
+                    <option value="hsl">hsl</option>
+                </select>
+            </div>
         </div>
 
         <div class="panel">
             <h4>Map Controls</h4>
             <label for="projectionSelect">Projection</label>
             <select id="projectionSelect" onchange="recompute()">
+                <option value="geoConicConformal">Conic Conformal</option>
                 <option value="geoAzimuthalEqualArea">Azimuthal Equal Area</option>
                 <option value="geoOrthographic">Orthographic</option>
                 <option value="geoMercator">Mercator</option>
                 <option value="geoEquirectangular">Equirectangular</option>
-                <option value="geoConicConformal">Conic Conformal</option>
+                <option value="geoConicEqualArea">Conic Equal Area</option>
+                <option value="geoConicEquidistant">Conic Equidistant</option>
+                <option value="geoGnomonic">Gnomonic</option>
+                <option value="geoStereographic">Stereographic</option>
+                <option value="geoAlbers">Albers</option>
+                <option value="geoEqualEarth">Equal Earth</option>
             </select>
 
             <label for="scaleSlider">Scale</label>
-            <input type="range" id="scaleSlider" min="10" max="1000" value="100" oninput="recompute()">
+            <input type="range" id="scaleSlider" min="50" max="300" value="100" oninput="recompute()">
             <span id="scaleValue"></span>
             <br />
-
-            <label for="latitudeRotationSlider">Latitude rotation</label>
-            <input type="range" id="latitudeRotationSlider" min="0" max="360" value="0" oninput="recompute()">
-            <span id="latitudeRotationValue">0</span>
-
-            <label for="longitudeRotationSlider">Longitude rotation</label>
-            <input type="range" id="longitudeRotationSlider" min="0" max="360" value="0" oninput="recompute()">
-            <span id="longitudeRotationValue">0</span>
         </div>
 
-
+        <div class="panel">
+            <h4>Randomize</h4>
+            <button
+                onclick="d3.select('#colorPicker').property('value', ''+d3.rgb(Math.random() * 255, Math.random() * 255, Math.random() * 255).formatHex()); recompute()">Randomize
+                Color</button>
+            <button onclick="d3.select('#radiusSlider').property('value', Math.random() * 255); recompute()">Randomize
+                Radius</button>
+            <button
+                onclick="d3.select('#projectionSelect').property('value', d3.shuffle(d3.select('#projectionSelect').selectAll('option').nodes())[0].value); recompute()">Randomize
+                Projection</button>
+            <button
+                onclick="d3.select('#scaleSlider').property('value', Math.random() * 250 + 50); recompute()">Randomize
+                Scale</button>
+            <!-- randomize all-->
+            <button
+                onclick="d3.select('#colorPicker').property('value', ''+d3.rgb(Math.random() * 255, Math.random() * 255, Math.random() * 255).formatHex()); d3.select('#radiusSlider').property('value', Math.random() * 255); d3.select('#projectionSelect').property('value', d3.shuffle(d3.select('#projectionSelect').selectAll('option').nodes())[0].value); d3.select('#scaleSlider').property('value', Math.random() * 250 + 50); recompute()">Randomize
+                All</button>
+        </div>
     </div>
 
     <div id="map">
     </div>
 
     <p>
-        The map shows the colors that are equidistant to the reference color (background
-        of the page) in the selected color space.
+        The map shows the colors that are equidistant to the reference color in the selected color space.
         Since these colors are located on a sphere, a projection is used to display them as a map.
     </p>
 
@@ -104,7 +122,7 @@
         const height = 300;
 
         // for normalization - sphere needs "equally long" axes
-        const coloraSpaces = [{
+        const colorSpaces = [{
             name: "rgb",
             func: d3.rgb,
             components: ["r", "g", "b"],
@@ -125,9 +143,7 @@
             map: {
                 projection: {
                     name: "mercator",
-                    scale: 175,
-                    longitudeRotation: 0,
-                    latitudeRotation: 0
+                    scale: 175
                 },
                 scale: 100
             }
@@ -148,9 +164,6 @@
          */
         function mapToColor(center, radius, lon, lat, longitudeRotation, latitudeRotation, colorSpace) {
 
-            lon = (lon + longitudeRotation) % 180;
-            lat = (lat + latitudeRotation) % 90;
-
             // compute location on sphere in a normalized coordinate system
             let x = Math.cos(lon / 180 * Math.PI) * Math.cos(lat / 180 * Math.PI);
             let y = Math.sin(lon / 180 * Math.PI) * Math.cos(lat / 180 * Math.PI);
@@ -163,7 +176,7 @@
             names = colorSpace == "rgb" ? ["r", "g", "b"] : ["h", "s", "l"];
 
             if (lon == 0 && lat == 0) {
-                console.log(center, names);
+                //console.log(center, names);
             }
             // scale and translate
             x = x * radius + center[names[0]];
@@ -171,14 +184,12 @@
             z = z * radius + center[names[2]];
 
             if (lon == 0 && lat == 0) {
-                console.log(`radius: ${radius}`);
-                console.log(center);
-                console.log(`x: ${x}, y: ${y}, z: ${z}`);
+                // console.log(`radius: ${radius}`);
+                // console.log(center);
+                // console.log(`x: ${x}, y: ${y}, z: ${z}`);
             }
 
             // convert from selected color space to RGB
-            // console.log(center, radius, lon, lat, longitudeRotation, latitudeRotation, colorSpace);
-            // console.log(d3.color(colorSpaceFunc(x, y, z)));
             const color = d3.color(colorSpaceFunc(x, y, z));
             return `rgb(${color.r},${color.g},${color.b})`;
 
@@ -192,9 +203,7 @@
             const projectionName = d3.select("#projectionSelect").property("value");
             return {
                 sphere: {
-                    radius: d3.select("#radiusSlider").property("value"),
-                    longitudeRotation: d3.select("#longitudeRotationSlider").property("value"),
-                    latitudeRotation: d3.select("#latitudeRotationSlider").property("value"),
+                    radius: d3.select("#radiusSlider").property("value")
                 },
                 map: {
                     projection: {
@@ -208,8 +217,6 @@
 
         function updateParameterLabels(parameters) {
             d3.select("#radiusValue").text(parameters.sphere.radius);
-            d3.select("#latitudeRotationValue").text(parameters.sphere.latitudeRotation);
-            d3.select("#longitudeRotationValue").text(parameters.sphere.longitudeRotation);
             d3.select("#scaleValue").text(parameters.map.scale);
         }
 
@@ -258,9 +265,8 @@
             context.putImageData(render(), 0, 0);
             document.getElementById("map").appendChild(canvas);
 
+            // Add tooltip
             {
-
-                // Add tooltip
                 const tooltip = d3.select("body").append("div")
                     .attr("class", "tooltip")
                     .style("position", "absolute")
